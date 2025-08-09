@@ -25,7 +25,7 @@ captures/
 *.apk
 output-metadata.json
 
-# IntelliJ
+# IntelliJ IDEA files
 .idea/
 misc.xml
 deploymentTargetDropDown.xml
