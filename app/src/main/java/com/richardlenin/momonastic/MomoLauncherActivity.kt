@@ -1,11 +1,19 @@
 package com.richardlenin.momonastic
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,34 +21,32 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.richardlenin.momonastic.ui.theme.MomonasticTheme
-import android.content.Context
-import android.content.SharedPreferences
-import androidx.activity.R
-import androidx.compose.foundation.background
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.SegmentedButtonDefaults.Icon
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.json.JSONObject
 import androidx.core.content.edit
+import androidx.core.graphics.createBitmap
+import com.richardlenin.momonastic.ui.theme.MomonasticTheme
+import org.json.JSONObject
 
 data class AppInfo(
     val name: String = "", // name is the display name of the app
     val packageName: String = "", // package name is the unique identifier for the app
-    val icon: String = "", // icon can be a drawable resource or a URL to an image
+    val icon: Drawable? = null, // icon can be a drawable resource or a URL to an image
     val openedCount: Int = 0,
     val appType: String = "unknown" // type is like "game", "social", "utility", "payment", etc.
 )
@@ -91,14 +97,17 @@ class MomoLauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppCountTracker.init(this) // Initialize the app count tracker
-        applist = packageManager.getInstalledApplications(0)
-            .filter { it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0 }
+        val intent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        applist = packageManager.queryIntentActivities(intent, 0)
             .map {
                 AppInfo(
                     name = it.loadLabel(packageManager).toString(),
-                    packageName = it.packageName,
-                    icon = it.loadIcon(packageManager).toString(),
-                    openedCount = AppCountTracker.getAppCount(it.packageName), // Get the count of how many times the app was opened
+                    packageName = it.activityInfo.packageName,
+                    icon = it.loadIcon(packageManager),
+                    openedCount = AppCountTracker.getAppCount(it.activityInfo.packageName), // Get the count of how many times the app was opened
                     appType = "unknown" // You can categorize apps here if needed
                 )
             }
@@ -108,20 +117,33 @@ class MomoLauncherActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             var appListState by remember { mutableStateOf(applist) }
+            val gpayApp = applist.find { it.packageName == gpayPackageName } ?: AppInfo()
+            val painter = remember(gpayApp.icon) {
+                gpayApp.icon?.let { BitmapPainter(drawableToBitmap(it).asImageBitmap()) }
+            }
             MomonasticTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     floatingActionButton = {
                         FloatingActionButton(
                             onClick = {
-                                onAppClick(applist.find { it.packageName == gpayPackageName } ?: AppInfo())
+                                onAppClick(gpayApp)
                             }
                         ) {
-                            Text(
-                                text = "Open GPay",
-                                modifier = Modifier.padding(8.dp),
-                                textAlign = TextAlign.Center
-                            )
+                            if (painter != null) {
+                                Icon(
+                                    painter = painter,
+                                    contentDescription = "Open GPay",
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = "Open GPay",
+                                    modifier = Modifier.padding(8.dp),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 ) { innerPadding ->
@@ -201,8 +223,8 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
     AppListUI(
         modifier = modifier,
         applist = listOf(
-            AppInfo(name = "App 1", packageName = "com.example.app1", icon = ""),
-            AppInfo(name = "App 2", packageName = "com.example.app2", icon = "")
+            AppInfo(name = "App 1", packageName = "com.example.app1", icon = null),
+            AppInfo(name = "App 2", packageName = "com.example.app2", icon = null)
         ),
         onAppClick = { appInfo ->
             // Handle app click
@@ -215,5 +237,30 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 fun GreetingPreview() {
     MomonasticTheme {
         Greeting("Android")
+    }
+}
+
+
+fun drawableToBitmap(drawable: Drawable): Bitmap {
+    return when (drawable) {
+        is BitmapDrawable -> drawable.bitmap
+        is AdaptiveIconDrawable -> {
+            val size = 108 // or any dp you want
+            val bitmap = createBitmap(size, size)
+            val canvas = android.graphics.Canvas(bitmap)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bitmap
+        }
+        else -> {
+            val bitmap = createBitmap(
+                drawable.intrinsicWidth.coerceAtLeast(1),
+                drawable.intrinsicHeight.coerceAtLeast(1)
+            )
+            val canvas = android.graphics.Canvas(bitmap)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bitmap
+        }
     }
 }
