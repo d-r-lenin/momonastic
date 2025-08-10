@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -147,23 +148,58 @@ class MomoLauncherActivity : ComponentActivity() {
                         }
                     }
                 ) { innerPadding ->
-                    AppListUI(
-                        modifier = Modifier.padding(innerPadding),
-                        applist = appListState,
-                        onAppClick = { appInfo ->
-                            onAppClick(appInfo)
-                            // Update the app list state to reflect the new count
-                            applist = applist.map {
-                                if (it.packageName == appInfo.packageName) {
-                                    it.copy(openedCount = AppCountTracker.getAppCount(it.packageName))
-                                } else {
-                                    it
-                                }
-                            }
-                            appListState = applist
+                    // Clock widget at the top
+                    val currentTime = remember { mutableStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            currentTime.value = System.currentTimeMillis()
+                            kotlinx.coroutines.delay(1000)
                         }
-                    )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        Text(
+                            text = java.text.SimpleDateFormat(
+                                "HH:mm:ss",
+                                java.util.Locale.getDefault()
+                            ).format(java.util.Date(currentTime.value)),
+                            fontSize = 46.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black)
+                                .clickable {
+                                    //open the clock app
+                                    val clockIntent = packageManager.getLaunchIntentForPackage("com.google.android.deskclock")
+                                    if (clockIntent != null) {
+                                        startActivity(clockIntent)
+                                    } else {
+                                        // Handle the case where the clock app cannot be launched
+                                        // For example, show a toast or a dialog
+                                    }
+                                },
+                            textAlign = TextAlign.Center,
+                            color = Color.White,
+                        )
 
+                        AppListUI(
+                            applist = appListState,
+                            onAppClick = { appInfo ->
+                                onAppClick(appInfo)
+                                // Update the app list state to reflect the new count
+                                applist = applist.map {
+                                    if (it.packageName == appInfo.packageName) {
+                                        it.copy(openedCount = AppCountTracker.getAppCount(it.packageName))
+                                    } else {
+                                        it
+                                    }
+                                }
+                                appListState = applist
+                            }
+                        )
+                    }
                 }
             }
         }
