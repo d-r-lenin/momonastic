@@ -16,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -149,40 +151,102 @@ class MomoLauncherActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     // Clock widget at the top
-                    val currentTime = remember { mutableStateOf(System.currentTimeMillis()) }
+                    val currentTime = remember { mutableLongStateOf(System.currentTimeMillis()) }
+                    val date = remember { mutableStateOf("") }
+                    val day = remember { mutableStateOf("") }
                     LaunchedEffect(Unit) {
                         while (true) {
-                            currentTime.value = System.currentTimeMillis()
+                            currentTime.longValue = System.currentTimeMillis()
+                            date.value = java.text.SimpleDateFormat(
+                                "dd MMMM yyyy",
+                                java.util.Locale.getDefault()
+                            ).format(java.util.Date(currentTime.longValue))
+                            day.value = java.text.SimpleDateFormat(
+                                "EEEE",
+                                java.util.Locale.getDefault()
+                            ).format(java.util.Date(currentTime.longValue))
                             kotlinx.coroutines.delay(1000)
                         }
                     }
+
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        Text(
-                            text = java.text.SimpleDateFormat(
-                                "HH:mm:ss",
-                                java.util.Locale.getDefault()
-                            ).format(java.util.Date(currentTime.value)),
-                            fontSize = 46.sp,
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color.Black)
-                                .clickable {
-                                    //open the clock app
-                                    val clockIntent = packageManager.getLaunchIntentForPackage("com.google.android.deskclock")
-                                    if (clockIntent != null) {
-                                        startActivity(clockIntent)
-                                    } else {
-                                        // Handle the case where the clock app cannot be launched
-                                        // For example, show a toast or a dialog
-                                    }
-                                },
-                            textAlign = TextAlign.Center,
-                            color = Color.White,
-                        )
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = java.text.SimpleDateFormat(
+                                    "HH:mm:ss",
+                                    java.util.Locale.getDefault()
+                                ).format(java.util.Date(currentTime.longValue)),
+                                fontSize = 46.sp,
+                                modifier = Modifier
+                                    .background(Color.Black)
+                                    .clickable {
+                                        //open the clock app
+                                        val clockIntent =
+                                            packageManager.getLaunchIntentForPackage("com.google.android.deskclock")
+                                        if (clockIntent != null) {
+                                            startActivity(clockIntent)
+                                        } else {
+                                            // Handle the case where the clock app cannot be launched
+                                            // For example, show a toast or a dialog
+                                        }
+                                    },
+                                textAlign = TextAlign.Center,
+                                color = Color.White,
+                            )
+                            // date
+                            Column {
+                                Text(
+                                    text = date.value,
+                                    fontSize = 24.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp)
+                                        .background(Color.Black)
+                                        .clickable {
+                                            //open the calendar app
+                                            val calendarIntent =
+                                                packageManager.getLaunchIntentForPackage("com.google.android.calendar")
+                                            if (calendarIntent != null) {
+                                                startActivity(calendarIntent)
+                                            } else {
+                                                // Handle the case where the calendar app cannot be launched
+                                                // For example, show a toast or a dialog
+                                            }
+                                        },
+                                    textAlign = TextAlign.Center,
+                                    color = Color.White,
+                                )
+                                Text(
+                                    text = day.value,
+                                    fontSize = 24.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp)
+                                        .background(Color.Black)
+                                        .clickable {
+                                            //open the calendar app
+                                            val calendarIntent =
+                                                packageManager.getLaunchIntentForPackage("com.google.android.calendar")
+                                            if (calendarIntent != null) {
+                                                startActivity(calendarIntent)
+                                            } else {
+                                                // Handle the case where the calendar app cannot be launched
+                                                // For example, show a toast or a dialog
+                                            }
+                                        },
+                                    textAlign = TextAlign.Center,
+                                    color = Color.White,
+                                )
+                            }
+                        }
 
                         AppListUI(
                             applist = appListState,
