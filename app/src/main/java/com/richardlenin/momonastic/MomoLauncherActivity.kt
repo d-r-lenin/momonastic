@@ -8,7 +8,10 @@ import android.graphics.Bitmap
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
@@ -22,6 +25,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -45,13 +50,15 @@ import androidx.core.content.edit
 import androidx.core.graphics.createBitmap
 import com.richardlenin.momonastic.ui.theme.MomonasticTheme
 import org.json.JSONObject
+import androidx.core.net.toUri
 
 data class AppInfo(
     val name: String = "", // name is the display name of the app
     val packageName: String = "", // package name is the unique identifier for the app
     val icon: Drawable? = null, // icon can be a drawable resource or a URL to an image
     val openedCount: Int = 0,
-    val appType: String = "unknown" // type is like "game", "social", "utility", "payment", etc.
+    val appType: String = "unknown", // type is like "game", "social", "utility", "payment", etc.
+    val intent: Intent? = null // intent can be used to launch the app directly
 )
 
 object AppCountTracker {
@@ -94,7 +101,13 @@ object AppCountTracker {
 class MomoLauncherActivity : ComponentActivity() {
     lateinit var applist: List<AppInfo>
 
-    val gpayPackageName = "com.google.android.apps.nbu.paisa.user" // Google Pay package name
+    val sideBarList: List<String> = listOf(
+        "com.google.android.apps.nbu.paisa.user", // Google Pay
+        "com.whatsapp", // WhatsApp
+        "com.google.android.apps.maps", // Google Maps
+        "com.android.camera", // Default Camera app
+        "com.android.dialer", // Default Phone app
+    )
 
     @SuppressLint("QueryPermissionsNeeded")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -120,32 +133,65 @@ class MomoLauncherActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             var appListState by remember { mutableStateOf(applist) }
-            val gpayApp = applist.find { it.packageName == gpayPackageName } ?: AppInfo()
-            val painter = remember(gpayApp.icon) {
-                gpayApp.icon?.let { BitmapPainter(drawableToBitmap(it).asImageBitmap()) }
-            }
+            val phoneApp = packageManager.getLaunchIntentForPackage("com.android.phone")
+                ?: packageManager.getLaunchIntentForPackage("com.google.android.dialer")
+
             MomonasticTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     floatingActionButton = {
-                        FloatingActionButton(
-                            onClick = {
-                                onAppClick(gpayApp)
-                            }
-                        ) {
-                            if (painter != null) {
-                                Icon(
-                                    painter = painter,
-                                    contentDescription = "Open GPay",
-                                    tint = Color.Unspecified,
-                                    modifier = Modifier.padding(8.dp)
-                                )
-                            } else {
-                                Text(
-                                    text = "Open GPay",
-                                    modifier = Modifier.padding(8.dp),
-                                    textAlign = TextAlign.Center
-                                )
+                        FloatingActionButton({
+
+                        }) {
+                            Column {
+                                sideBarList.forEach { packageName ->
+                                    var appInfo = appListState.find { it.packageName == packageName }
+                                    // get intent for determined package names
+
+                                    if (appInfo != null) {
+                                        if (appInfo.icon == null) {
+                                            Text(
+                                                text = appInfo.name.slice(0..1).uppercase(),
+                                                fontSize = 24.sp,
+                                                modifier = Modifier.padding(8.dp)
+                                                    .clickable {
+                                                        onAppClick(appInfo)
+                                                    },
+                                                textAlign = TextAlign.Center
+                                            )
+                                        } else {
+                                            Icon(
+                                                painter = BitmapPainter(
+                                                    drawableToBitmap(appInfo.icon!!).asImageBitmap()
+                                                ),
+                                                contentDescription = "Open ${appInfo.name}",
+                                                tint = Color.Unspecified,
+                                                modifier = Modifier.padding(8.dp)
+                                                    .clickable {
+                                                        onAppClick(appInfo)
+                                                    }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Add a phone icon to the FAB if the phone app is available
+                                if (phoneApp != null) {
+                                    Icon(
+                                        painter = BitmapPainter(
+                                            drawableToBitmap(
+                                                packageManager.getApplicationIcon("com.android.phone")
+                                            ).asImageBitmap()
+                                        ),
+                                        contentDescription = "Open Phone",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.padding(8.dp)
+                                            .clickable {
+                                                // open the phone app
+                                                startActivity(phoneApp)
+                                            }
+                                    )
+                                }
                             }
                         }
                     }
@@ -269,7 +315,7 @@ class MomoLauncherActivity : ComponentActivity() {
         }
     }
 
-    fun onAppClick(appInfo: AppInfo) {
+    private fun onAppClick(appInfo: AppInfo) {
         AppCountTracker.incrementAppCount(appInfo.packageName)
        // open the app using its package name
         val launchIntent = packageManager.getLaunchIntentForPackage(appInfo.packageName)
