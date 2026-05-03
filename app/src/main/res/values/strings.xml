@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">momonastic</string>
+    <string name="title_activity_gester_detection_test">GesterDetectionTest</string>
 </resources>

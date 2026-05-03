@@ -4,14 +4,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.LauncherApps
+import android.content.pm.ShortcutInfo
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
@@ -25,8 +26,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -50,7 +49,14 @@ import androidx.core.content.edit
 import androidx.core.graphics.createBitmap
 import com.richardlenin.momonastic.ui.theme.MomonasticTheme
 import org.json.JSONObject
-import androidx.core.net.toUri
+import android.os.Process
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.ExperimentalMaterial3Api
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class AppInfo(
     val name: String = "", // name is the display name of the app
@@ -101,13 +107,58 @@ object AppCountTracker {
 class MomoLauncherActivity : ComponentActivity() {
     lateinit var applist: List<AppInfo>
 
-    val sideBarList: List<String> = listOf(
-        "com.google.android.apps.nbu.paisa.user", // Google Pay
-        "com.whatsapp", // WhatsApp
-        "com.google.android.apps.maps", // Google Maps
-        "com.android.camera", // Default Camera app
-        "com.android.dialer", // Default Phone app
-    )
+    /**
+     * Try to find a camera package that's available on the device. We look up
+     * camera launcher intents first and then fall back to common vendor package names.
+     */
+    private fun findCameraPackage(context: Context): String? {
+        val stillCameraIntent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+        val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+
+        val pm = context.packageManager
+
+        // Prefer activities that handle the still-image camera intent
+        val resolveStill = pm.queryIntentActivities(stillCameraIntent, 0)
+            .firstOrNull()?.activityInfo?.packageName
+        if (resolveStill != null) return resolveStill
+
+        // Fallback to an activity that handles generic image capture
+        val resolveCapture = pm.queryIntentActivities(captureIntent, 0)
+            .firstOrNull()?.activityInfo?.packageName
+        if (resolveCapture != null) return resolveCapture
+
+        // Final fallback: try common camera package names
+        val known = listOf(
+            "com.google.android.googlecamera",
+            "com.google.android.camera",
+            "com.sec.android.app.camera",
+            "com.samsung.android.camera",
+            "com.oppo.camera",
+            "com.miui.camera",
+            "com.huawei.camera",
+            "com.android.camera"
+        )
+
+        return known.firstOrNull { pkg ->
+            try {
+                pm.getPackageInfo(pkg, 0)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    private fun buildSideBarList(context: Context): List<String> {
+        val cameraPkg = findCameraPackage(context)
+        return listOfNotNull(
+            "com.google.android.apps.nbu.paisa.user",
+            "com.whatsapp",
+            "com.google.android.apps.maps",
+            cameraPkg,
+            "com.android.dialer"
+        )
+    }
 
     @SuppressLint("QueryPermissionsNeeded")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +179,9 @@ class MomoLauncherActivity : ComponentActivity() {
                 )
             }
 
+        // Resolve the runtime sidebar list (includes resolved camera package if present)
+        val runtimeSideBarList = buildSideBarList(this)
+
         onBackPressedDispatcher.addCallback(this) {}
 
         enableEdgeToEdge()
@@ -144,8 +198,9 @@ class MomoLauncherActivity : ComponentActivity() {
 
                         }) {
                             Column {
-                                sideBarList.forEach { packageName ->
-                                    var appInfo = appListState.find { it.packageName == packageName }
+                                // use runtime-resolved sidebar list (camera package may vary by device)
+                                runtimeSideBarList.forEach { packageName ->
+                                    val appInfo = appListState.find { it.packageName == packageName }
                                     // get intent for determined package names
 
                                     if (appInfo != null) {
@@ -162,7 +217,7 @@ class MomoLauncherActivity : ComponentActivity() {
                                         } else {
                                             Icon(
                                                 painter = BitmapPainter(
-                                                    drawableToBitmap(appInfo.icon!!).asImageBitmap()
+                                                    drawableToBitmap(appInfo.icon).asImageBitmap()
                                                 ),
                                                 contentDescription = "Open ${appInfo.name}",
                                                 tint = Color.Unspecified,
@@ -203,15 +258,15 @@ class MomoLauncherActivity : ComponentActivity() {
                     LaunchedEffect(Unit) {
                         while (true) {
                             currentTime.longValue = System.currentTimeMillis()
-                            date.value = java.text.SimpleDateFormat(
+                            date.value = SimpleDateFormat(
                                 "dd MMMM yyyy",
-                                java.util.Locale.getDefault()
-                            ).format(java.util.Date(currentTime.longValue))
-                            day.value = java.text.SimpleDateFormat(
+                                Locale.getDefault()
+                            ).format(Date(currentTime.longValue))
+                            day.value = SimpleDateFormat(
                                 "EEEE",
-                                java.util.Locale.getDefault()
-                            ).format(java.util.Date(currentTime.longValue))
-                            kotlinx.coroutines.delay(1000)
+                                Locale.getDefault()
+                            ).format(Date(currentTime.longValue))
+                            delay(1000)
                         }
                     }
 
@@ -226,10 +281,10 @@ class MomoLauncherActivity : ComponentActivity() {
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = java.text.SimpleDateFormat(
+                                text = SimpleDateFormat(
                                     "HH:mm:ss",
-                                    java.util.Locale.getDefault()
-                                ).format(java.util.Date(currentTime.longValue)),
+                                    Locale.getDefault()
+                                ).format(Date(currentTime.longValue)),
                                 fontSize = 46.sp,
                                 modifier = Modifier
                                     .background(Color.Black)
@@ -307,6 +362,19 @@ class MomoLauncherActivity : ComponentActivity() {
                                     }
                                 }
                                 appListState = applist
+                            },
+                            onAppLongClick = { appInfo ->
+                                // Handle long click to show app shortcuts
+                                val shortcuts = getAppShortcuts(this@MomoLauncherActivity, appInfo.packageName)
+                                if (shortcuts.isNotEmpty()) {
+                                    // Show a dialog or a bottom sheet with the shortcuts
+                                    // For simplicity, we will just log the shortcuts here
+                                    shortcuts.forEach { shortcut ->
+                                        println("Shortcut: ${shortcut.shortLabel} - ${shortcut.id}")
+                                    }
+                                } else {
+                                    println("No shortcuts available for ${appInfo.name}")
+                                }
                             }
                         )
                     }
@@ -327,14 +395,20 @@ class MomoLauncherActivity : ComponentActivity() {
         }
     }
 
+    fun launchShortcut(context: Context, shortcut: ShortcutInfo) {
+        val launcherApps = context.getSystemService(LAUNCHER_APPS_SERVICE) as LauncherApps
+        launcherApps.startShortcut(shortcut, null, null)
+    }
+
 }
 
 fun List<AppInfo>.sortAppListByCount(): List<AppInfo> {
     return sortedBy { it.name }
 }
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun AppListUI(modifier: Modifier = Modifier, applist: List<AppInfo> = listOf(), onAppClick: (AppInfo) -> Unit = {}) {
+fun AppListUI(modifier: Modifier = Modifier, applist: List<AppInfo> = listOf(), onAppClick: (AppInfo) -> Unit = {}, onAppLongClick: (AppInfo) -> Unit = {}) {
     val scrollState = rememberScrollState()
     Column(
         modifier = modifier
@@ -355,9 +429,13 @@ fun AppListUI(modifier: Modifier = Modifier, applist: List<AppInfo> = listOf(), 
                             Color.Black
                         }
                     )
-                    .clickable {
-                    onAppClick(appName)
-                },
+                    .combinedClickable(
+                        onClick = { onAppClick(appName) },
+                        onLongClick = {
+                            onAppLongClick(appName)
+                        }
+                    )
+                ,
                 textAlign = TextAlign.Center
             )
         }
@@ -393,7 +471,7 @@ fun drawableToBitmap(drawable: Drawable): Bitmap {
         is AdaptiveIconDrawable -> {
             val size = 108 // or any dp you want
             val bitmap = createBitmap(size, size)
-            val canvas = android.graphics.Canvas(bitmap)
+            val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, canvas.width, canvas.height)
             drawable.draw(canvas)
             bitmap
@@ -403,10 +481,27 @@ fun drawableToBitmap(drawable: Drawable): Bitmap {
                 drawable.intrinsicWidth.coerceAtLeast(1),
                 drawable.intrinsicHeight.coerceAtLeast(1)
             )
-            val canvas = android.graphics.Canvas(bitmap)
+            val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, canvas.width, canvas.height)
             drawable.draw(canvas)
             bitmap
         }
     }
+}
+
+
+fun getAppShortcuts(context: Context, packageName: String): List<ShortcutInfo> {
+    val launcherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+
+    return launcherApps.getShortcuts(
+        LauncherApps.ShortcutQuery().apply {
+            setQueryFlags(
+                LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
+            )
+            setPackage(packageName)
+        },
+        Process.myUserHandle()
+    ) ?: emptyList()
 }
